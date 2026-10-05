@@ -1,0 +1,17 @@
+name: Validate CloudFormation
+
+on:
+  push:
+    paths: ["cloudformation/**", ".github/workflows/validate.yml"]
+  pull_request:
+
+jobs:
+  cfn-lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install cfn-lint
+      - run: cfn-lint cloudformation/*.yaml

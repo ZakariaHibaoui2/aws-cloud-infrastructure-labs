@@ -1,0 +1,73 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >
+  Shared network storage - encrypted Amazon EFS file system with mount targets in
+  both private subnets. NFS (TCP 2049) is allowed only from the EFSClient security
+  group (least privilege). Reproduces the "Introducing Amazon EFS" lab (IBM3204).
+
+Parameters:
+  EnvironmentName:
+    Type: String
+    Default: lab
+
+Resources:
+  EFSClientSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Attach to EC2 instances that mount the file system
+      VpcId: !ImportValue
+        Fn::Sub: ${EnvironmentName}-VpcId
+      Tags:
+        - Key: Name
+          Value: EFSClient
+
+  EFSMountTargetSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: NFS from EFSClient only
+      VpcId: !ImportValue
+        Fn::Sub: ${EnvironmentName}-VpcId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 2049
+          ToPort: 2049
+          SourceSecurityGroupId: !Ref EFSClientSecurityGroup
+      Tags:
+        - Key: Name
+          Value: EFS Mount Target
+
+  FileSystem:
+    Type: AWS::EFS::FileSystem
+    Properties:
+      Encrypted: true
+      PerformanceMode: generalPurpose
+      ThroughputMode: bursting
+      LifecyclePolicies:
+        - TransitionToIA: AFTER_30_DAYS
+      FileSystemTags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName}-efs
+
+  MountTarget1:
+    Type: AWS::EFS::MountTarget
+    Properties:
+      FileSystemId: !Ref FileSystem
+      SubnetId: !ImportValue
+        Fn::Sub: ${EnvironmentName}-PrivateSubnet1
+      SecurityGroups: [!Ref EFSMountTargetSecurityGroup]
+
+  MountTarget2:
+    Type: AWS::EFS::MountTarget
+    Properties:
+      FileSystemId: !Ref FileSystem
+      SubnetId: !ImportValue
+        Fn::Sub: ${EnvironmentName}-PrivateSubnet2
+      SecurityGroups: [!Ref EFSMountTargetSecurityGroup]
+
+Outputs:
+  FileSystemId:
+    Value: !Ref FileSystem
+  MountCommand:
+    Description: Run on an EC2 instance in the EFSClient security group
+    Value: !Sub "sudo mkdir -p /efs && sudo mount -t nfs4 -o nfsvers=4.1,rsize=1048576,wsize=1048576,hard,timeo=600,retrans=2 ${FileSystem}.efs.${AWS::Region}.amazonaws.com:/ /efs"
+  EFSClientSecurityGroupId:
+    Value: !Ref EFSClientSecurityGroup

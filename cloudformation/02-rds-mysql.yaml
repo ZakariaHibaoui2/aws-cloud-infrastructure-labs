@@ -1,0 +1,96 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >
+  Two-tier application data layer - Amazon RDS for MySQL ("inventory-db") in the
+  private subnets of the Lab VPC, reachable only from the web-server security group.
+  Reproduces the "Creating an Amazon RDS Database" lab (IBM3204).
+
+Parameters:
+  EnvironmentName:
+    Type: String
+    Default: lab
+  DBName:
+    Type: String
+    Default: inventory
+  DBUsername:
+    Type: String
+    Default: admin
+    NoEcho: true
+  DBInstanceClass:
+    Type: String
+    Default: db.t3.micro
+    AllowedValues: [db.t3.micro, db.t4g.micro, db.t3.small]
+
+Resources:
+  WebSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Web servers (HTTP from anywhere)
+      VpcId: !ImportValue
+        Fn::Sub: ${EnvironmentName}-VpcId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Name
+          Value: Web-SG
+
+  DBSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: MySQL access from the web tier only
+      VpcId: !ImportValue
+        Fn::Sub: ${EnvironmentName}-VpcId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 3306
+          ToPort: 3306
+          SourceSecurityGroupId: !Ref WebSecurityGroup
+      Tags:
+        - Key: Name
+          Value: DB-SG
+
+  DBSubnetGroup:
+    Type: AWS::RDS::DBSubnetGroup
+    Properties:
+      DBSubnetGroupDescription: Private subnets for RDS
+      SubnetIds:
+        - !ImportValue
+          Fn::Sub: ${EnvironmentName}-PrivateSubnet1
+        - !ImportValue
+          Fn::Sub: ${EnvironmentName}-PrivateSubnet2
+
+  InventoryDB:
+    Type: AWS::RDS::DBInstance
+    DeletionPolicy: Snapshot
+    UpdateReplacePolicy: Snapshot
+    Properties:
+      DBInstanceIdentifier: inventory-db
+      Engine: mysql
+      EngineVersion: "8.4.6"
+      DBInstanceClass: !Ref DBInstanceClass
+      AllocatedStorage: "20"
+      StorageType: gp3
+      StorageEncrypted: true
+      DBName: !Ref DBName
+      MasterUsername: !Ref DBUsername
+      ManageMasterUserPassword: true          # password generated and stored in Secrets Manager
+      DBSubnetGroupName: !Ref DBSubnetGroup
+      VPCSecurityGroups: [!Ref DBSecurityGroup]
+      PubliclyAccessible: false
+      MultiAZ: false
+      BackupRetentionPeriod: 1
+      AutoMinorVersionUpgrade: true
+
+Outputs:
+  DBEndpoint:
+    Description: Paste this endpoint into the web application's settings page
+    Value: !GetAtt InventoryDB.Endpoint.Address
+  DBSecretArn:
+    Description: Secrets Manager secret holding the master password
+    Value: !GetAtt InventoryDB.MasterUserSecret.SecretArn
+  WebSecurityGroupId:
+    Value: !Ref WebSecurityGroup
+    Export:
+      Name: !Sub ${EnvironmentName}-WebSG

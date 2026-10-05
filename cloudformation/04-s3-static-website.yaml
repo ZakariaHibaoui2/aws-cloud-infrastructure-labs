@@ -1,0 +1,48 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >
+  Static website hosting on Amazon S3 for the Cafe site - website endpoint,
+  index/error documents and a bucket policy granting public read on objects.
+  Reproduces the "Creating a Static Website for the Cafe" lab (IBM3204).
+
+Parameters:
+  BucketName:
+    Type: String
+    Description: Globally unique bucket name (e.g. cafe-website-<your-initials>-2026)
+
+Resources:
+  WebsiteBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Ref BucketName
+      WebsiteConfiguration:
+        IndexDocument: index.html
+        ErrorDocument: index.html
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        IgnorePublicAcls: true
+        BlockPublicPolicy: false        # the bucket policy below grants public read
+        RestrictPublicBuckets: false
+      VersioningConfiguration:
+        Status: Enabled
+      Tags:
+        - Key: Project
+          Value: cafe-static-website
+
+  PublicReadPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref WebsiteBucket
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: PublicReadGetObject
+            Effect: Allow
+            Principal: "*"
+            Action: s3:GetObject
+            Resource: !Sub ${WebsiteBucket.Arn}/*
+
+Outputs:
+  WebsiteURL:
+    Value: !GetAtt WebsiteBucket.WebsiteURL
+  UploadCommand:
+    Value: !Sub "aws s3 sync ./site s3://${WebsiteBucket} --delete"
